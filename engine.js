@@ -5,7 +5,7 @@ import { removeBackground as removeBackgroundWithIMGly } from './engine-core.js'
 
 const ENGINE_DEFAULTS = {
   device: 'cpu',
-  model: 'isnet_quint8',
+  model: 'isnet_fp16',
   proxyToWorker: false,
   output: { format: 'image/png', quality: 1 },
 };

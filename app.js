@@ -97,7 +97,7 @@ ui.processBtn.addEventListener('click', async () => {
   ui.processBtn.textContent = 'Memisahkan subjek…';
   message('Menyiapkan AI. Unduhan pertama mungkin membutuhkan waktu.');
   try {
-    enginePromise ||= import('./engine.js?v=android-reload-20261030-r7');
+    enginePromise ||= import('./engine.js?v=android-reload-20261030-r8');
     const { removeBackground } = await enginePromise;
     const blob = await removeBackground(sourceFile, {
       publicPath: "https://latar-bg-remover.latar.workers.dev/model/",
