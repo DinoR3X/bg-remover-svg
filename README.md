@@ -28,6 +28,16 @@ Saat merilis perubahan situs, perbarui `SOURCE_REVISION` di `worker.js` ke commi
 
 Catatan: SVG yang diekspor berisi PNG raster transparan; hasilnya bukan gambar vektor.
 
+## Tes regresi antarmuka
+
+```bash
+python3 -m pip install playwright
+python3 -m playwright install chromium
+python3 -m unittest discover -s tests -v
+```
+
+Tes menggunakan PNG kecil yang dibuat di memori dan engine lokal tiruan dengan jeda. Tidak ada foto yang diunggah atau model AI yang diunduh. Jika Chromium sudah terpasang, set `CHROMIUM_PATH` bila perlu. Tes memastikan perubahan slider yang langsung disusul **Proses ulang** tidak meninggalkan tombol unduh terkunci, baik proses ulang berhasil maupun gagal. Timer dan pratinjau lama dibatalkan saat proses/gambar baru dimulai.
+
 ## Lisensi
 
 Sumber aplikasi ini ditawarkan di bawah GNU Affero General Public License v3.0 atau yang lebih baru. Lihat [LICENSE](LICENSE). Mesin IMG.LY memiliki lisensi AGPL-3.0; lihat juga [repository upstream](https://github.com/imgly/background-removal-js).

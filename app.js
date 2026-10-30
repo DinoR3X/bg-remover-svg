@@ -77,6 +77,13 @@ async function buildAdjustedPreview(image, settings) {
   drawRefinedImage(context, image, settings, width, height);
   return { blob: await pngBlob(canvas) };
 }
+function cancelPendingRefinement() {
+  clearTimeout(adjustmentTimer);
+  adjustmentTimer = null;
+  // A new image/process supersedes both queued and already-encoding previews.
+  adjustmentSequence++;
+  adjusting = false;
+}
 async function refreshAdjustedPreview() {
   if (!resultImage || busy) return;
   const request = ++adjustmentSequence;
@@ -92,6 +99,7 @@ async function refreshAdjustedPreview() {
     if (ui.resultTab.classList.contains('active')) showView(true);
     message('Penyempurnaan tepi diterapkan. Pilih resolusi lalu unduh hasilnya.', 'success');
   } catch (error) {
+    if (request !== adjustmentSequence) return;
     console.error('Matte refinement failed:', error);
     message('Penyempurnaan belum berhasil: ' + (error.message || 'coba lagi.'), 'error');
   } finally {
@@ -137,9 +145,7 @@ async function acceptFile(file) {
     if (sourceURL) URL.revokeObjectURL(sourceURL);
     if (engineURL) URL.revokeObjectURL(engineURL);
     if (resultURL) URL.revokeObjectURL(resultURL);
-    clearTimeout(adjustmentTimer);
-    adjustmentSequence++;
-    adjusting = false;
+    cancelPendingRefinement();
     sourceFile = file; sourceImage = image; sourceURL = url;
     resultImage = null; engineURL = null; resultURL = null; resultReady = false;
     ui.dropZone.hidden = true; ui.imageStage.hidden = false; ui.replaceBtn.hidden = false;
@@ -165,6 +171,7 @@ function setBusy(value) {
 
 ui.processBtn.addEventListener('click', async () => {
   if (!sourceFile || busy) return;
+  cancelPendingRefinement();
   setBusy(true); ui.progress.value = 3; loadedResources.clear();
   ui.processBtn.textContent = 'Memisahkan subjek…';
   message('Menyiapkan AI. Unduhan pertama mungkin membutuhkan waktu.');
