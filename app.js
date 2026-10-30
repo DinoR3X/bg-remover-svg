@@ -97,10 +97,11 @@ ui.processBtn.addEventListener('click', async () => {
   ui.processBtn.textContent = 'Memisahkan subjek…';
   message('Menyiapkan AI. Unduhan pertama mungkin membutuhkan waktu.');
   try {
-    enginePromise ||= import('./engine.js');
+    enginePromise ||= import('./engine.js?v=android-reload-20261030-r6');
     const { removeBackground } = await enginePromise;
     const blob = await removeBackground(sourceFile, {
       model: 'isnet_quint8', device: 'cpu', proxyToWorker: false,
+      publicPath: "https://latar-bg-remover.latar.workers.dev/model/",
       output: { format: 'image/png', quality: 1 },
       progress: (key, current, total) => {
         if (key.startsWith('fetch:')) {
@@ -125,7 +126,10 @@ ui.processBtn.addEventListener('click', async () => {
     message('Selesai! Pilih resolusi dan unduh hasilnya.', 'success');
   } catch (error) {
     console.error('Background removal failed:', error);
-    message('Proses belum berhasil. Periksa koneksi, lalu coba lagi. Jika memori perangkat terbatas, gunakan foto yang lebih kecil.', 'error');
+    const detail = String(error?.message || 'Kesalahan tidak diketahui.').replace(/ +/g, ' ').slice(0, 160);
+    const inAppBrowser = /TikTok|musical_ly|BytedanceWebview|FBAN|FBAV|Instagram|; wv/i.test(navigator.userAgent);
+    const hint = inAppBrowser ? ' Buka situs ini di Chrome, bukan browser dalam aplikasi.' : ' Periksa koneksi lalu coba lagi.';
+    message('Proses gagal: ' + detail + '.' + hint, 'error');
     // Allow a fresh network attempt after a failed module load.
     enginePromise = null;
   } finally {

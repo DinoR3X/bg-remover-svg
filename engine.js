@@ -10792,23 +10792,39 @@ async function loadAsBlob(key, config) {
   }
   const chunks = entry.chunks;
   let downloadedSize = 0;
-  const responses = chunks.map(async (chunk) => {
+  const allChunkData = new Array(chunks.length);
+  let nextChunk = 0;
+  const concurrency = Math.min(6, chunks.length);
+  async function downloadChunk(index) {
+    const chunk = chunks[index];
     const chunkSize = chunk.offsets[1] - chunk.offsets[0];
     const url = config.publicPath ? new URL(chunk.name, config.publicPath).toString() : chunk.name;
-    const response = await fetch(url, config.fetchArgs);
-    const blob = await response.blob();
-    if (chunkSize !== blob.size) {
-      throw new Error(
-        `Failed to fetch ${key} with size ${chunkSize} but got ${blob.size}`
-      );
+    let blob;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const response = await fetch(url, config.fetchArgs);
+        if (!response.ok) throw new Error("Model download returned HTTP " + response.status);
+        const candidate = await response.blob();
+        if (chunkSize !== candidate.size) throw new Error("Failed to fetch " + key + " with size " + chunkSize + " but got " + candidate.size);
+        blob = candidate;
+        break;
+      } catch (error) {
+        if (attempt === 3) throw new Error("Model chunk failed after 4 attempts: " + (error && error.message ? error.message : error));
+        await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1) + Math.random() * 500));
+      }
     }
     if (config.progress) {
       downloadedSize += chunkSize;
-      config.progress(`fetch:${key}`, downloadedSize, entry.size);
+      config.progress("fetch:" + key, downloadedSize, entry.size);
     }
     return blob;
-  });
-  const allChunkData = await Promise.all(responses);
+  }
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (nextChunk < chunks.length) {
+      const index = nextChunk++;
+      allChunkData[index] = await downloadChunk(index);
+    }
+  }));
   const data = new Blob(allChunkData, { type: entry.mime });
   if (data.size !== entry.size) {
     throw new Error(
