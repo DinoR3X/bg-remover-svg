@@ -1,6 +1,6 @@
 // Latar asset proxy. Image inference remains entirely in the user's browser.
 // Pin site source to the tested application commit to avoid stale upstream cache.
-const SOURCE_REVISION = 'ddc6d9b94c5f4721e19d102fde76d5fa2d4b510b';
+const SOURCE_REVISION = '390ee6571ec5f07f8c1e9da395325c71bee5bdb2';
 const SOURCE_ROOT = 'https://raw.githubusercontent.com/DinoR3X/bg-remover-svg/' + SOURCE_REVISION + '/';
 const MODEL_ROOT = 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/';
 
@@ -10,7 +10,8 @@ const SITE_FILES = {
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/engine.js': ['engine.js', 'text/javascript; charset=utf-8'],
-  '/engine-core.js': ['engine-core.js', 'text/javascript; charset=utf-8']
+  '/engine-core.js': ['engine-core.js', 'text/javascript; charset=utf-8'],
+  '/matte-processing.js': ['matte-processing.js', 'text/javascript; charset=utf-8']
 };
 
 addEventListener('fetch', event => event.respondWith(handle(event.request)));
