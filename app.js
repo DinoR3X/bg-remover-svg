@@ -1,8 +1,11 @@
 /* Latar: browser-only image editor. Source is offered under AGPL-3.0-or-later. */
+import { drawRefinedImage } from './matte-processing.js?v=refinement-20261030-r2';
+
 const $ = (id) => document.getElementById(id);
-const ui = Object.fromEntries(['fileInput','dropZone','imageStage','preview','previewLabel','imageDimensions','replaceBtn','originalTab','resultTab','resolution','sizeInfo','outputDimensions','formatNote','processBtn','downloadBtn','status','progress'].map(id => [id, $(id)]));
+const ui = Object.fromEntries(['fileInput','dropZone','imageStage','preview','previewLabel','imageDimensions','replaceBtn','originalTab','resultTab','resolution','sizeInfo','outputDimensions','formatNote','processBtn','downloadBtn','status','progress','smoothness','smoothnessValue','cleanup','tolerance','toleranceValue'].map(id => [id, $(id)]));
 let sourceFile = null, sourceImage = null, sourceURL = null;
-let resultImage = null, resultURL = null, busy = false, selection = 0;
+let resultImage = null, engineURL = null, resultURL = null, resultReady = false;
+let busy = false, adjusting = false, selection = 0, adjustmentSequence = 0, adjustmentTimer;
 let enginePromise;
 const loadedResources = new Map();
 const number = new Intl.NumberFormat('id-ID');
@@ -12,6 +15,13 @@ function message(text, kind = '') {
   ui.status.className = `status ${kind}`;
 }
 function chosenFormat() { return document.querySelector('input[name="format"]:checked').value; }
+function refinementSettings() {
+  return { smoothness: Number(ui.smoothness.value), cleanup: ui.cleanup.checked, tolerance: Number(ui.tolerance.value) };
+}
+function updateRefinementLabels() {
+  ui.smoothnessValue.textContent = `${ui.smoothness.value}%`;
+  ui.toleranceValue.textContent = `${ui.tolerance.value}%`;
+}
 function exportSize() {
   const image = resultImage || sourceImage;
   if (!image) return null;
@@ -27,10 +37,10 @@ function updateExport() {
   const svg = chosenFormat() === 'svg';
   ui.formatNote.textContent = svg ? 'SVG berisi PNG transparan, bukan jalur vektor.' : 'PNG lossless dengan latar transparan.';
   ui.downloadBtn.querySelector('span').textContent = `Unduh ${svg ? 'SVG' : 'PNG'}`;
-  ui.downloadBtn.disabled = busy || !resultImage;
+  ui.downloadBtn.disabled = busy || adjusting || !resultImage || !resultReady;
 }
 function showView(result) {
-  if (!sourceImage || (result && !resultImage)) return;
+  if (!sourceImage || (result && (!resultImage || !resultURL))) return;
   ui.preview.src = result ? resultURL : sourceURL;
   ui.preview.alt = result ? 'Subjek foto dengan latar belakang transparan' : 'Gambar asli sebelum background dihapus';
   ui.previewLabel.textContent = result ? 'Hasil transparan' : 'Gambar asli';
@@ -47,6 +57,61 @@ function loadImage(url) {
     image.src = url;
   });
 }
+function pngBlob(canvas) {
+  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Browser tidak dapat membuat PNG.')), 'image/png'));
+}
+function dataURL(blob) {
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+}
+function previewDimensions(image) {
+  const width = image.naturalWidth, height = image.naturalHeight;
+  const scale = Math.min(1, 1400 / Math.max(width, height));
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+async function buildAdjustedPreview(image, settings) {
+  const { width, height } = previewDimensions(image);
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas tidak tersedia.');
+  drawRefinedImage(context, image, settings, width, height);
+  return { blob: await pngBlob(canvas) };
+}
+async function refreshAdjustedPreview() {
+  if (!resultImage || busy) return;
+  const request = ++adjustmentSequence;
+  adjusting = true;
+  updateExport();
+  try {
+    const adjusted = await buildAdjustedPreview(resultImage, refinementSettings());
+    if (request !== adjustmentSequence) return;
+    const nextURL = URL.createObjectURL(adjusted.blob);
+    if (resultURL) URL.revokeObjectURL(resultURL);
+    resultURL = nextURL;
+    resultReady = true;
+    if (ui.resultTab.classList.contains('active')) showView(true);
+    message('Penyempurnaan tepi diterapkan. Pilih resolusi lalu unduh hasilnya.', 'success');
+  } catch (error) {
+    console.error('Matte refinement failed:', error);
+    message('Penyempurnaan belum berhasil: ' + (error.message || 'coba lagi.'), 'error');
+  } finally {
+    if (request === adjustmentSequence) {
+      adjusting = false;
+      updateExport();
+    }
+  }
+}
+function queueRefinement() {
+  updateRefinementLabels();
+  if (!resultImage || busy) return;
+  clearTimeout(adjustmentTimer);
+  adjustmentSequence++;
+  adjusting = true;
+  updateExport();
+  message('Menerapkan pengaturan tepi…');
+  adjustmentTimer = setTimeout(refreshAdjustedPreview, 140);
+}
+
 function openPicker() { if (!busy) ui.fileInput.click(); }
 ui.dropZone.addEventListener('click', openPicker);
 ui.dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker(); } });
@@ -58,6 +123,7 @@ ui.dropZone.addEventListener('drop', e => { if (!busy && e.dataTransfer.files[0]
 // Prevent accidentally navigating away when a file is dropped outside the upload area.
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => e.preventDefault());
+
 async function acceptFile(file) {
   if (busy) return;
   const request = ++selection;
@@ -69,16 +135,20 @@ async function acceptFile(file) {
     if (request !== selection) { URL.revokeObjectURL(url); return; }
     if (image.naturalWidth * image.naturalHeight > 28000000 || Math.max(image.naturalWidth, image.naturalHeight) > 12000) throw new Error('Gambar terlalu besar untuk memori browser. Gunakan foto hingga 28 megapiksel dan sisi maksimal 12.000 px.');
     if (sourceURL) URL.revokeObjectURL(sourceURL);
+    if (engineURL) URL.revokeObjectURL(engineURL);
     if (resultURL) URL.revokeObjectURL(resultURL);
+    clearTimeout(adjustmentTimer);
+    adjustmentSequence++;
+    adjusting = false;
     sourceFile = file; sourceImage = image; sourceURL = url;
-    resultImage = null; resultURL = null;
+    resultImage = null; engineURL = null; resultURL = null; resultReady = false;
     ui.dropZone.hidden = true; ui.imageStage.hidden = false; ui.replaceBtn.hidden = false;
     ui.originalTab.disabled = false; ui.resultTab.disabled = true;
     ui.imageDimensions.textContent = `${number.format(image.naturalWidth)} × ${number.format(image.naturalHeight)} px`;
     ui.processBtn.disabled = false;
     ui.processBtn.innerHTML = '<span aria-hidden="true">✦</span> Hapus background';
     showView(false); updateExport();
-    message('Gambar siap. Klik “Hapus background”.');
+    message('Gambar siap. Atur tepi bila perlu, lalu klik “Hapus background”.');
   } catch (error) { URL.revokeObjectURL(url); message(error.message || 'Gambar tidak dapat dibaca.', 'error'); }
 }
 function setBusy(value) {
@@ -86,21 +156,23 @@ function setBusy(value) {
   ui.processBtn.disabled = value || !sourceFile;
   ui.replaceBtn.disabled = value;
   ui.fileInput.disabled = value;
+  for (const id of ['smoothness','cleanup','tolerance']) ui[id].disabled = value;
   ui.imageStage.classList.toggle('processing', value);
   ui.imageStage.setAttribute('aria-busy', String(value));
   ui.progress.hidden = !value;
   updateExport();
 }
+
 ui.processBtn.addEventListener('click', async () => {
   if (!sourceFile || busy) return;
   setBusy(true); ui.progress.value = 3; loadedResources.clear();
   ui.processBtn.textContent = 'Memisahkan subjek…';
   message('Menyiapkan AI. Unduhan pertama mungkin membutuhkan waktu.');
   try {
-    enginePromise ||= import('./engine.js?v=android-reload-20261030-r8');
+    enginePromise ||= import('./engine.js?v=refinement-20261030-r1');
     const { removeBackground } = await enginePromise;
     const blob = await removeBackground(sourceFile, {
-      publicPath: "https://latar-bg-remover.latar.workers.dev/model/",
+      publicPath: 'https://latar-bg-remover.latar.workers.dev/model/',
       output: { format: 'image/png', quality: 1 },
       progress: (key, current, total) => {
         if (key.startsWith('fetch:')) {
@@ -111,18 +183,24 @@ ui.processBtn.addEventListener('click', async () => {
           message(current < total ? 'Mengunduh mesin AI ke browser… foto tetap lokal.' : 'AI siap. Sedang memisahkan subjek…');
         } else {
           ui.progress.value = Math.max(ui.progress.value, 90);
-          message('Memisahkan subjek dan merapikan transparansi…');
+          message('Memisahkan subjek di browser…');
         }
       }
     });
-    const url = URL.createObjectURL(blob);
+    const nextEngineURL = URL.createObjectURL(blob);
     let image;
-    try { image = await loadImage(url); } catch (error) { URL.revokeObjectURL(url); throw error; }
+    try { image = await loadImage(nextEngineURL); } catch (error) { URL.revokeObjectURL(nextEngineURL); throw error; }
+    if (engineURL) URL.revokeObjectURL(engineURL);
     if (resultURL) URL.revokeObjectURL(resultURL);
-    resultURL = url; resultImage = image;
+    resultImage = image; engineURL = nextEngineURL; resultURL = null; resultReady = false;
+    ui.progress.value = 95;
+    message('AI selesai. Menerapkan penyempurnaan tepi…');
+    const adjusted = await buildAdjustedPreview(image, refinementSettings());
+    resultURL = URL.createObjectURL(adjusted.blob);
+    resultReady = true;
     ui.resultTab.disabled = false; ui.progress.value = 100;
     showView(true);
-    message('Selesai! Pilih resolusi dan unduh hasilnya.', 'success');
+    message('Selesai! Atur tepi, pilih resolusi, lalu unduh hasilnya.', 'success');
   } catch (error) {
     console.error('Background removal failed:', error);
     const detail = String(error?.message || 'Kesalahan tidak diketahui.').replace(/ +/g, ' ').slice(0, 160);
@@ -140,18 +218,19 @@ ui.originalTab.addEventListener('click', () => showView(false));
 ui.resultTab.addEventListener('click', () => showView(true));
 ui.resolution.addEventListener('change', updateExport);
 document.querySelectorAll('input[name="format"]').forEach(input => input.addEventListener('change', updateExport));
-function pngBlob(canvas) { return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Browser tidak dapat membuat PNG.')), 'image/png')); }
-function dataURL(blob) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); }); }
+ui.smoothness.addEventListener('input', queueRefinement);
+ui.cleanup.addEventListener('change', queueRefinement);
+ui.tolerance.addEventListener('input', queueRefinement);
+
 ui.downloadBtn.addEventListener('click', async () => {
-  if (!resultImage || busy) return;
+  if (!resultImage || !resultReady || busy || adjusting) return;
   ui.downloadBtn.disabled = true;
   try {
     const { width, height } = exportSize();
     const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Canvas tidak tersedia.');
-    context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
-    context.clearRect(0, 0, width, height); context.drawImage(resultImage, 0, 0, width, height);
+    drawRefinedImage(context, resultImage, refinementSettings(), width, height);
     let blob = await pngBlob(canvas);
     const format = chosenFormat();
     if (format === 'svg') {
@@ -168,4 +247,5 @@ ui.downloadBtn.addEventListener('click', async () => {
   finally { updateExport(); }
 });
 ui.resultTab.disabled = true;
+updateRefinementLabels();
 updateExport();

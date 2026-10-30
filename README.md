@@ -17,9 +17,12 @@ Lalu buka `http://localhost:8000`. Koneksi internet diperlukan saat pertama kali
 - `index.html` — antarmuka aplikasi.
 - `styles.css` — gaya dan tata letak.
 - `app.js` — alur aplikasi dan ekspor.
+- `matte-processing.js` — penghalusan tepi, toleransi alfa, dan pembersihan artefak secara lokal di browser.
 - `engine.js` — konfigurasi engine browser-only: CPU dan model `isnet_fp16` medium untuk hasil tepi yang lebih baik, tetap tanpa mengirim foto ke server.
 - `engine-core.js` — bundle lokal [IMG.LY Background Removal JS](https://github.com/imgly/background-removal-js) dan ONNX Runtime Web; foto tetap diproses di browser.
 - `worker.js` — source Cloudflare Worker untuk menyajikan kode situs dan mem-proxy aset model; gambar pengguna tidak pernah dikirim ke Worker.
+
+Kontrol **Kehalusan**, **Bersihkan sisa latar**, dan **Toleransi** mengubah mask transparansi hasil AI. Mask diproses per tile pada resolusi pratinjau atau ekspor, sehingga detail tepi tetap dihitung hingga resolusi asli. Pilihan resolusi dan format PNG/SVG tetap tersedia.
 
 Saat merilis perubahan situs, perbarui `SOURCE_REVISION` di `worker.js` ke commit source yang telah diuji, lalu deploy ulang Worker. Pin commit menghindari cache upstream menyajikan berkas lama.
 
