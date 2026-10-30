@@ -17,7 +17,8 @@ Lalu buka `http://localhost:8000`. Koneksi internet diperlukan saat pertama kali
 - `index.html` — antarmuka aplikasi.
 - `styles.css` — gaya dan tata letak.
 - `app.js` — alur aplikasi dan ekspor.
-- `engine.js` — mesin penghapus background berbasis [IMG.LY Background Removal JS](https://github.com/imgly/background-removal-js).
+- `engine.js` — konfigurasi engine browser-only: CPU dan model `isnet_quint8` untuk kompatibilitas perangkat, termasuk ponsel.
+- `engine-core.js` — bundle lokal [IMG.LY Background Removal JS](https://github.com/imgly/background-removal-js) dan ONNX Runtime Web; foto tetap diproses di browser.
 
 Catatan: SVG yang diekspor berisi PNG raster transparan; hasilnya bukan gambar vektor.
 
