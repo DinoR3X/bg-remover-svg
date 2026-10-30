@@ -1,6 +1,6 @@
 // Latar asset proxy. Image inference remains entirely in the user's browser.
 // Pin site source to the tested application commit to avoid stale upstream cache.
-const SOURCE_REVISION = '390ee6571ec5f07f8c1e9da395325c71bee5bdb2';
+const SOURCE_REVISION = 'd3c967b64aa5ac2111fda18002ddbd6840f0c458';
 const SOURCE_ROOT = 'https://raw.githubusercontent.com/DinoR3X/bg-remover-svg/' + SOURCE_REVISION + '/';
 const MODEL_ROOT = 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/';
 
